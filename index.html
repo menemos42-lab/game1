@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Tactical FPS - Samsung S8 Fix</title>
+    <!-- Include Three.js via CDN for 3D Graphics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            touch-action: none;
+            background-color: #0a0f18;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* HUD Overlay Elements */
+        #hud {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .hud-panel {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 2px solid #00ffcc;
+            color: #fff;
+            font-weight: bold;
+            font-size: 13px;
+            letter-spacing: 1px;
+        }
+
+        .health-container {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .bar-bg {
+            width: 110px;
+            height: 8px;
+            background: #441111;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        #playerHealthBar {
+            width: 100%;
+            height: 100%;
+            background: #ff3333;
+        }
+
+        /* Center Target Reticle */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: #00ffcc;
+        }
+        #crosshair::before { top: 4px; left: -8px; width: 26px; height: 2px; }
+        #crosshair::after { top: -8px; left: 4px; width: 2px; height: 26px; }
+
+        /* Full Screen Interaction Pad Layer */
+        #touchPad {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 3;
+        }
+
+        /* Left Touch D-Pad Housing Unit */
+        #joystickContainer {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 90px;
+            height: 90px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 204, 0.4);
+            border-radius: 50%;
+            display: none;
+            transform: translate(-50%, -50%);
+            z-index: 4;
+        }
+        #joystickKnob {
+            position: absolute;
+            top: 27px;
+            left: 27px;
+            width: 36px;
+            height: 36px;
+            background: #00ffcc;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #00ffcc;
+        }
+
+        /* Control Trigger Action Nodes */
+        .action-btn {
+            position: absolute;
+            background: rgba(0, 255, 204, 0.15);
+            border: 2px solid #00ffcc;
+            color: #00ffcc;
+            font-weight: bold;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 6;
+        }
+        #fireBtn {
+            bottom: 30px;
+            right: 30px;
+            width: 75px;
+            height: 75px;
+            font-size: 16px;
+        }
+        #reloadBtn {
+            bottom: 120px;
+            right: 40px;
+            width: 50px;
+            height: 50px;
+            font-size: 11px;
+        }
+
+        /* Fixed Menu Overlay System */
+        #menuOverlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #0a0f18;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .btn {
+            background: #00ffcc;
+            color: #050b10;
+            border: none;
+            padding: 14px 40px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 6px;
+            margin-top: 20px;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.4);
+        }
+
+        /* Dynamic 3D Tag Renderer Labels */
+        .bot-health-label {
+            position: absolute;
+            color: #ff3333;
+            font-weight: bold;
+            background: rgba(0,0,0,0.85);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 10px;
+            pointer-events: none;
+            transform: translate(-50%, -100%);
+            border: 1px solid #ff3333;
+            display: none;
+            z-index: 2;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Menu Section Block -->
+    <div id="menuOverlay">
+        <h1 style="font-size: 30px; color: #00ffcc; margin: 0 0 10px 0; letter-spacing: 1px;">TACTICAL BOT ARENA</h1>
+        <p style="color: #ccc; font-size: 14px; margin: 0 0 10px 0; line-height: 1.5;">
+            Left Screen: Move Frame<br>
+            Right Screen: Swipe to Aim<br>
+            Tap Neon Nodes to Fire & Reload
+        </p>
+        <button class="btn" id="deployBtn">DEPLOY SYSTEM</button>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <div id="hud">
+        <div class="hud-panel health-container">
+            <div>OPERATOR HP</div>
+            <div class="bar-bg"><div id="playerHealthBar"></div></div>
+        </div>
+        <div class="hud-panel" id="ammoDisplay">
+            MAG: 30 / 30
+        </div>
+    </div>
+
+    <!-- On-screen controls interface layout nodes -->
+    <div id="fireBtn" class="action-btn">FIRE</div>
+    <div id="reloadBtn" class="action-btn">RELOAD</div>
+
+    <div id="touchPad"></div>
+    <div id="joystickContainer">
+        <div id="joystickKnob"></div>
+    </div>
+
+    <div id="botUIContainer"></div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // --- System Globals Config ---
+        let scene, camera, renderer;
+        let clock = new THREE.Clock();
+        let gameActive = false;
+        
+        let player = {
+            health: 100,
+            maxHealth: 100,
+            ammo: 30,
+            maxAmmo: 30,
+            isReloading: false,
+            speed: 9,
+            position: new THREE.Vector3(0, 1.6, 15)
+        };
+
+        let pitch = 0, yaw = 0;
+        let gunMesh;
+        let isShootingAnim = false, shootAnimTimer = 0;
+
+        let bots = [];
+        const botCount = 3; // Capped for processing speed limits on S8
+
+        // Multi-touch Pointer Tracking Coordinates
+        let joystickTouchId = null;
+        let lookTouchId = null;
+        let joystickCenter = new THREE.Vector2();
+        let joystickMove = new THREE.Vector2();
+        let lastLookPos = new THREE.Vector2();
+
+        function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0f18);
+            scene.fog = new THREE.FogExp2(0x0a0f18, 0.03);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.copy(player.position);
+
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Safe anti-alias scaling metrics
+
+            // Illumination Framework
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0x00ffcc, 1.0);
+            dirLight.position.set(10, 30, 10);
+            scene.add(dirLight);
+
+            // Populate Map
+            createArena();
+            createGun();
+            spawnBots();
+
+            // Setup Mobile Touch Routing
+            setupMobileTouch();
+            window.addEventListener('resize', onWindowResize);
+
+            // True Mobile-Touch Binding for the Deploy Button
+            const deployBtn = document.getElementById('deployBtn');
+            const menuOverlay = document.getElementById('menuOverlay');
+            
+            function launchGame(e) {
+                e.preventDefault();
+                menuOverlay.style.display = 'none';
+                gameActive = true;
+            }
+            
+            deployBtn.addEventListener('touchstart', launchGame, {passive: false});
+            deployBtn.addEventListener('click', launchGame);
+        }
+
+        function createArena() {
+            const floorGeo = new THREE.PlaneGeometry(60, 60);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x111622, roughness: 0.8 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            const grid = new THREE.GridHelper(60, 20, 0x00ffcc, 0x1b2436);
+            grid.position.y = 0.01;
+            scene.add(grid);
+
+            // Strategic cover layout arrays
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x1b2436, roughness: 0.5 });
+            const layout = [
+                { w: 18, h: 4, d: 2, x: 0, z: -5 },
+                { w: 4, h: 5, d: 4, x: -12, z: 8 },
+                { w: 4, h: 5, d: 4, x: 12, z: 8 }
+            ];
+
+            layout.forEach(b => {
+                const geo = new THREE.BoxGeometry(b.w, b.h, b.d);
+                const mesh = new THREE.Mesh(geo, wallMat);
+                mesh.position.set(b.x, b.h / 2, b.z);
+                scene.add(mesh);
+            });
+        }
+
+        function createGun() {
+            gunMesh = new THREE.Group();
+            const bodyGeo = new THREE.BoxGeometry(0.04, 0.05, 0.25);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            gunMesh.add(body);
+
+            const barrelGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.18);
+            barrelGeo.rotateX(Math.PI / 2);
+            const barrel = new THREE.Mesh(barrelGeo, bodyMat);
+            barrel.position.set(0, 0.01, -0.18);
+            gunMesh.add(barrel);
+
+            scene.add(gunMesh);
+        }
+
+        function spawnBots() {
+            const container = document.getElementById('botUIContainer');
+            
+            for(let i=0; i < botCount; i++) {
+                const botGroup = new THREE.Group();
+                
+                const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8);
+                const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                body.position.y = 0.9;
+                botGroup.add(body);
+
+                const visorGeo = new THREE.BoxGeometry(0.5, 0.12, 0.2);
+                const visorMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const visor = new THREE.Mesh(visorGeo, visorMat);
+                visor.position.set(0, 1.4, -0.35);
+                botGroup.add(visor);
+
+                botGroup.position.set((Math.random() - 0.5) * 35, 0, (Math.random() - 0.5) * 30 - 8);
+                scene.add(botGroup);
+
+                const label = document.createElement('div');
+                label.className = 'bot-health-label';
+                label.id = `bot-label-${i}`;
+                label.innerText = 'BOT HP: 100';
+                container.appendChild(label);
+
+                bots.push({
+                    mesh: botGroup,
+                    health: 100,
+                    domElement: label,
+                    speed: 3.5 + Math.random() * 2,
+                    directionTimer: 0,
+                    moveVector: new THREE.Vector3(),
+                    lastShotTime: 0
+                });
+            }
+        }
+
+        // --- Completely Reworked Mobile Touch Core Controls ---
+        function setupMobileTouch() {
+            const pad = document.getElementById('touchPad');
+            const joyContainer = document.getElementById('joystickContainer');
+            const joyKnob = document.getElementById('joystickKnob');
+
+            pad.addEventListener('touchstart', function(e) {
+                if (!gameActive) return;
+
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const touch = e.changedTouches[i];
+                    
+                    // Left Screen Joystick Assignment
+                    if (touch.clientX < window.innerWidth / 2 && joystickTouchId === null) {
+                        joystickTouchId = touch.identifier;
+                        joystickCenter.set(touch.clientX, touch.clientY);
+                        
+                        joyContainer.style.display = 'block';
+                        joyContainer.style.left = `${touch.clientX}px`;
+                        joyContainer.style.top = `${touch.clientY}px`;
+                        joyKnob.style.transform = `translate(0px, 0px)`;
+                    } 
+                    // Right Screen Aim Assignment
+                    else if (touch.clientX >= window.innerWidth / 2 && lookTouchId === null) {
+                        lookTouchId = touch.identifier;
+                        lastLookPos.set(touch.clientX, touch.clientY);
+                    }
+                }
+            }, {passive: true});
+
+            pad.addEventListener('touchmove', function(e) {
+                if (!gameActive) return;
+
+                for (let i = 0; i < e.touches.length; i++) {
+                    const touch = e.touches[i];
+
+                    if (touch.identifier === joystickTouchId) {
+                        let distX = touch.clientX - joystickCenter.x;
+                        let distY = touch.clientY - joystickCenter.y;
+                        const maxDist = 35;
+
+                        const angle = Math.atan2(distY, distX);
+                        const distance = Math.min(maxDist, Math.hypot(distX, distY));
+
+                        const knobX = Math.cos(angle) * distance;
+                        const knobY = Math.sin(angle) * distance;
+                        joyKnob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+
+                        joystickMove.set(knobX / maxDist, knobY / maxDist);
+                    } 
+                    else if (touch.identifier === lookTouchId) {
+                        const deltaX = touch.clientX - lastLookPos.x;
+                        const deltaY = touch.clientY - lastLookPos.y;
+
+                        // Adjusted scaling parameters for Samsung S8 screen width matrix
+                        yaw -= deltaX * 0.006;
+                        pitch -= deltaY * 0.006;
+                        pitch = Math.max(-Math.PI / 2.4, Math.min(Math.PI / 2.4, pitch));
+
+                        camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+                        lastLookPos.set(touch.clientX, touch.clientY);
+                    }
+                }
+            }, {passive: true});
+
+            const endTouch = function(e) {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const touch = e.changedTouches[i];
+                    if (touch.identifier === joystickTouchId) {
+                        joystickTouchId = null;
+                        joystickMove.set(0, 0);
+                        joyContainer.style.display = 'none';
+                    } else if (touch.identifier === lookTouchId) {
+                        lookTouchId = null;
+                    }
+                }
+            };
+
+            pad.addEventListener('touchend', endTouch);
+            pad.addEventListener('touchcancel', endTouch);
+
+            // UI Button Interface Direct Assignments
+            document.getElementById('fireBtn').addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                fireWeapon();
+            });
+
+            document.getElementById('reloadBtn').addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                reloadWeapon();
+            });
+        }
+
+        function fireWeapon() {
+            if (player.isReloading || !gameActive) return;
+
+            if (player.ammo > 0) {
+                player.ammo--;
+                updateHUD();
+                
+                isShootingAnim = true;
+                shootAnimTimer = 0;
+
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                
+                const targets = bots.map(b => b.mesh.children[0]);
+                const intersects = raycaster.intersectObjects(targets);
+
+                if (intersects.length > 0) {
+                    const hitObj = intersects[0].object;
+                    const idx = bots.findIndex(b => b.mesh.children[0] === hitObj);
+                    if (idx !== -1) {
+                        damageBot(idx, 25);
+                    }
+                }
+            } else {
+                reloadWeapon();
+            }
+        }
+
+        function reloadWeapon() {
+            if (player.isReloading || player.ammo === player.maxAmmo) return;
+            player.isReloading = true;
+            document.getElementById('ammoDisplay').innerText = "RELOADING...";
+            
+            setTimeout(() => {
+                player.ammo = player.maxAmmo;
+                player.isReloading = false;
+                updateHUD();
+            }, 1200);
+        }
+
+        function damageBot(idx, amount) {
+            const bot = bots[idx];
+            bot.health -= amount;
+            if (bot.health <= 0) {
+                bot.mesh.position.set((Math.random() - 0.5) * 35, 0, (Math.random() - 0.5) * 30 - 8);
+                bot.health = 100;
+            }
+            bot.domElement.innerText = `BOT HP: ${bot.health}`;
+        }
+
+        function damagePlayer(amount) {
+            player.health -= amount;
+            if (player.health <= 0) {
+                player.health = 100;
+                camera.position.set(0, 1.6, 15);
+                yaw = 0; pitch = 0;
+                camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+                gameActive = false;
+                document.getElementById('menuOverlay').style.display = 'flex';
+            }
+            updateHUD();
+        }
+
+        function updateHUD() {
+            document.getElementById('playerHealthBar').style.width = `${player.health}%`;
+            document.getElementById('ammoDisplay').innerText = `MAG: ${player.ammo} / ${player.maxAmmo}`;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Frame Core Processing Frame Cycles Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            if (gameActive) {
+                // Vector Translation Engine Setup
+                if (joystickMove.lengthSq() > 0) {
+                    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+                    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                    forward.y = 0; right.y = 0;
+                    forward.normalize(); right.normalize();
+
+                    camera.position.addScaledVector(forward, -joystickMove.y * player.speed * delta);
+                    camera.position.addScaledVector(right, joystickMove.x * player.speed * delta);
+                }
+
+                // Map boundary locks
+                camera.position.x = Math.max(-28, Math.min(28, camera.position.x));
+                camera.position.z = Math.max(-28, Math.min(28, camera.position.z));
+
+                // Weapon Positioning Layout Anchor
+                gunMesh.position.copy(camera.position);
+                gunMesh.quaternion.copy(camera.quaternion);
+                gunMesh.translateZ(-0.25);
+                gunMesh.translateX(0.07);
+                gunMesh.translateY(-0.1);
+
+                if (isShootingAnim) {
+                    shootAnimTimer += delta * 45;
+                    if (shootAnimTimer < Math.PI) {
+                        gunMesh.translateZ(Math.sin(shootAnimTimer) * 0.02);
+                        gunMesh.rotateX(Math.sin(shootAnimTimer) * 0.05);
+                    } else {
+                        isShootingAnim = false;
+                    }
+                }
+
+                // AI Bots Loop
+                const timeNow = performance.now();
+                bots.forEach((bot, index) => {
+                    bot.directionTimer -= delta;
+                    if (bot.directionTimer <= 0) {
+                        bot.directionTimer = 1.5 + Math.random() * 2;
+                        bot.moveVector.set((Math.random() - 0.5), 0, (Math.random() - 0.5)).normalize();
+                    }
+
+                    bot.mesh.position.addScaledVector(bot.moveVector, bot.speed * delta);
+                    
+                    const dist = bot.mesh.position.distanceTo(camera.position);
+                    if (dist < 15) {
+                        bot.mesh.lookAt(camera.position.x, bot.mesh.position.y, camera.position.z);
+                        
+                        if (timeNow - bot.lastShotTime > 1600) {
+                            bot.lastShotTime = timeNow;
+                            if (Math.random() > 0.6) {
+                                damagePlayer(10);
+                            }
+                        }
+                    } else if (bot.moveVector.lengthSq() > 0) {
+                        bot.mesh.rotation.y = Math.atan2(bot.moveVector.x, bot.moveVector.z);
+                    }
+
+                    // Project Labels to Screen Space HUD Layer
+                    const pos = new THREE.Vector3();
+                    bot.mesh.getWorldPosition(pos);
+                    pos.y += 2.0;
+                    pos.project(camera);
+
+                    if (pos.z <= 1 && Math.abs(pos.x) < 1 && Math.abs(pos.y) < 1) {
+                        const x = (pos.x * .5 + .5) * window.innerWidth;
+                        const y = (pos.y * -.5 + .5) * window.innerHeight;
+                        bot.domElement.style.left = `${x}px`;
+                        bot.domElement.style.top = `${y}px`;
+                        bot.domElement.style.display = 'block';
+                    } else {
+                        bot.domElement.style.display = 'none';
+                    }
+                });
+            } else {
+                bots.forEach(b => b.domElement.style.display = 'none');
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Fire Execution Engines
+        init();
+        animate();
+    </script>
+</body>
+</html>
